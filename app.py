@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-# Настройка путей
+# Настройка путей для EXE
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
@@ -22,10 +22,8 @@ ctk.set_default_color_theme("blue")
 class PrintingApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Типография 2026: Финансовая модель")
-        self.geometry("1250x850")
-        
-        # Правильный перехват закрытия
+        self.title("Типография 2026: Financial Optimizer")
+        self.geometry("1350x900")
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.saved_values = self.load_data()
@@ -34,33 +32,37 @@ class PrintingApp(ctk.CTk):
         self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         # ЛЕВАЯ ПАНЕЛЬ
-        self.left_panel = ctk.CTkScrollableFrame(self.main_frame, width=420)
+        self.left_panel = ctk.CTkScrollableFrame(self.main_frame, width=460)
         self.left_panel.pack(side="left", fill="y", padx=(0, 20))
 
-        ctk.CTkLabel(self.left_panel, text="ПАРАМЕТРЫ МОДЕЛИ", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
-        self.create_input("НДС (%)", "20", "nds_pct")
+        # --- НАЛОГОВЫЙ РЕЖИМ ---
+        ctk.CTkLabel(self.left_panel, text="1. НАЛОГОВЫЙ РЕЖИМ", font=("Arial", 18, "bold"), text_color="#edad2b").pack(pady=(0,10))
+        self.tax_mode = ctk.StringVar(value=self.saved_values.get("tax_mode", "ОСН (с НДС 20%)"))
+        self.tax_menu = ctk.CTkOptionMenu(self.left_panel, 
+                                         values=["ОСН (с НДС 20%)", "УСН (6% от выручки)"], 
+                                         variable=self.tax_mode, 
+                                         command=lambda _: self.calculate())
+        self.tax_menu.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(self.left_panel, text="*УСН считает 6% налога от всей выручки", font=("Arial", 11, "italic")).pack()
+
+        ctk.CTkLabel(self.left_panel, text="2. ПАРАМЕТРЫ ПРОИЗВОДСТВА", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
         self.create_input("Себестоимость (%)", "60", "cost_pct")
         self.create_input("Целевая чистая прибыль", "1000", "target_profit")
 
-        ctk.CTkLabel(self.left_panel, text="Персонал и Налоги (ФОТ)", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
-        self.create_input("Зарплата на руки", "22400", "salary_net")
-        self.create_input("Уплата ФСЗН", "0", "fszn", readonly=True)
-        self.create_input("Уплата подоходного", "0", "income_tax", readonly=True)
-        self.create_input("Уплата белгосстрах", "0", "bgs", readonly=True)
+        ctk.CTkLabel(self.left_panel, text="3. ПЕРСОНАЛ (ФОТ)", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
+        self.create_input("Зарплата на руки (Net)", "22400", "salary_net")
+        self.create_input("ФСЗН (35%)", "0", "fszn", readonly=True)
+        self.create_input("Подоходный (13%)", "0", "income_tax", readonly=True)
 
-        ctk.CTkLabel(self.left_panel, text="Офис и Финансы", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
-        self.create_input("Бухгалтерия", "1500", "accounting")
-        self.create_input("Аренда + Коммуналка", "12500", "rent")
-        self.create_input("Лизинг BYD", "2500", "leasing_byd")
-        self.create_input("Лизинг BESTUNE", "1500", "leasing_belyash")
-        self.create_input("Кредиты", "900", "credit_costs")
-        self.create_input("Банк", "300", "bank_services")
-        self.create_input("Прочие затраты", "300", "other_costs")
+        ctk.CTkLabel(self.left_panel, text="4. ПРОЧИЕ РАСХОДЫ", font=("Arial", 18, "bold"), text_color="#3b8ed0").pack(pady=10)
+        self.create_input("Аренда + Комм", "12500", "rent")
+        self.create_input("Лизинги/Кредиты", "4900", "loans")
+        self.create_input("Бухгалтерия/Банк", "2100", "other_fixed")
 
         self.btn_calc = ctk.CTkButton(self.left_panel, text="РАССЧИТАТЬ", command=self.calculate, height=50, font=("Arial", 16, "bold"))
         self.btn_calc.pack(pady=25)
 
-        self.result_text = ctk.CTkTextbox(self.left_panel, width=350, height=220, font=("Consolas", 14))
+        self.result_text = ctk.CTkTextbox(self.left_panel, width=420, height=280, font=("Consolas", 14))
         self.result_text.pack(pady=10)
 
         # ПРАВАЯ ПАНЕЛЬ
@@ -73,49 +75,26 @@ class PrintingApp(ctk.CTk):
         self.auto_calculate_taxes()
         self.calculate()
 
-    def on_closing(self):
-        plt.close('all')
-        self.quit()
-        self.destroy()
-        sys.exit()
-
     def create_input(self, label_text, default_val, var_name, readonly=False):
         frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
         frame.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(frame, text=label_text, width=220, anchor="w").pack(side="left")
-        
+        ctk.CTkLabel(frame, text=label_text, width=200, anchor="w").pack(side="left")
         sv = tk.StringVar(value=str(self.saved_values.get(var_name, default_val)))
         entry = ctk.CTkEntry(frame, width=120, textvariable=sv, state="readonly" if readonly else "normal")
-        
-        if var_name == "salary_net":
-            sv.trace_add("write", self.auto_calculate_taxes)
-        
+        if var_name == "salary_net": sv.trace_add("write", self.auto_calculate_taxes)
         entry.pack(side="right")
         setattr(self, var_name, entry)
 
     def auto_calculate_taxes(self, *args):
         try:
-            val_str = self.salary_net.get().replace(",", ".")
-            if not val_str: return
-            net = float(val_str)
-            # Расчет грязной зарплаты исходя из 0.86 (100% - 13% - 1%)
+            net = float(self.salary_net.get().replace(",", "."))
             gross = net / 0.86
-            
-            f_worker = gross * 0.01
-            f_employer = gross * 0.34
-            inc_tax = gross * 0.13
-            bgs_val = gross * 0.006
-
-            self.update_field(self.fszn, f"{(f_employer + f_worker):.2f}")
-            self.update_field(self.income_tax, f"{inc_tax:.2f}")
-            self.update_field(self.bgs, f"{bgs_val:.2f}")
+            self.update_readonly(self.fszn, f"{(gross * 0.35):.2f}")
+            self.update_readonly(self.income_tax, f"{(gross * 0.13):.2f}")
         except: pass
 
-    def update_field(self, field, val):
-        field.configure(state="normal")
-        field.delete(0, tk.END)
-        field.insert(0, val)
-        field.configure(state="readonly")
+    def update_readonly(self, field, val):
+        field.configure(state="normal"); field.delete(0, tk.END); field.insert(0, val); field.configure(state="readonly")
 
     def load_data(self):
         if os.path.exists(CONFIG_FILE):
@@ -126,47 +105,87 @@ class PrintingApp(ctk.CTk):
 
     def calculate(self):
         try:
-            keys = ["nds_pct", "cost_pct", "target_profit", "salary_net", "fszn", "income_tax", "bgs", 
-                    "accounting", "rent", "leasing_byd", "leasing_belyash", "credit_costs", "bank_services", "other_costs"]
-            
+            mode = self.tax_mode.get()
+            keys = ["cost_pct", "target_profit", "salary_net", "fszn", "income_tax", "rent", "loans", "other_fixed"]
             vals = {k: float(getattr(self, k).get().replace(",", ".")) for k in keys}
             
-            # Суммарные затраты на персонал
-            total_staff = vals["salary_net"] + vals["fszn"] + vals["income_tax"] + vals["bgs"]
+            # Сохранение
+            save_dict = {k: getattr(self, k).get() for k in keys}
+            save_dict["tax_mode"] = mode
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f: json.dump(save_dict, f, indent=4)
+
+            # Расчет ФОТ + налоги
+            staff_total = vals["salary_net"] + vals["fszn"] + vals["income_tax"] + (vals["salary_net"]/0.86 * 0.006)
+            fc = staff_total + vals["rent"] + vals["loans"] + vals["other_fixed"]
             
-            # Постоянные расходы
-            fc = (total_staff + vals["accounting"] + vals["rent"] + 
-                  vals["leasing_byd"] + vals["leasing_belyash"] + 
-                  vals["credit_costs"] + vals["bank_services"] + vals["other_costs"])
-            
-            nds_f = 1 + (vals["nds_pct"] / 100)
-            margin = 1 - (vals["cost_pct"] / 100)
-            
-            bep = (fc / margin) * nds_f
-            goal = ((fc + (vals["target_profit"] / 0.8)) / margin) * nds_f
+            margin_pct = 1 - (vals["cost_pct"] / 100)
+
+            if "ОСН" in mode:
+                nds_f = 1.2
+                bep = (fc / margin_pct) * nds_f
+                # Для прибыли при ОСН используем коэффициент 0.8 (налог на прибыль 20%)
+                goal = ((fc + (vals["target_profit"] / 0.8)) / margin_pct) * nds_f
+            else:
+                # УСН 6%: Маржа уменьшается на налог от выручки
+                effective_margin = margin_pct - 0.06
+                bep = fc / effective_margin
+                goal = (fc + vals["target_profit"]) / effective_margin
+
+            # МОДУЛЬ 4: ЗАПАС ФИНАНСОВОЙ ПРОЧНОСТИ
+            safety_margin = ((goal - bep) / goal) * 100
+            if safety_margin < 10:
+                status, color = "КРИТИЧЕСКИЙ (Риск убытка)", "#ff4c4c"
+            elif safety_margin < 25:
+                status, color = "УДОВЛЕТВОРИТЕЛЬНО", "#edad2b"
+            else:
+                status, color = "ВЫСОКИЙ (Стабильно)", "#4caf50"
 
             self.result_text.delete("1.0", tk.END)
-            res = (f"ЗАТРАТЫ НА ПЕРСОНАЛ: {int(total_staff):,} BYN\n"
-                   f"ПОСТОЯННЫЕ (ВСЕГО): {int(fc):,} BYN\n"
+            res = (f"РЕЖИМ: {mode}\n"
+                   f"ЗАТРАТЫ НА ПЕРСОНАЛ: {int(staff_total):,} BYN\n"
+                   f"ПОСТОЯННЫЕ (ИТОГО): {int(fc):,} BYN\n"
                    f"------------------------------\n"
                    f"ТОЧКА НУЛЯ: {int(bep):,} BYN\n"
-                   f"ЦЕЛЬ ВЫРУЧКИ: {int(goal):,} BYN\n\n"
-                   f"Прибыль: {int(vals['target_profit']):,} BYN").replace(",", " ")
-            self.result_text.insert("1.0", res)
+                   f"ЦЕЛЬ ВЫРУЧКИ: {int(goal):,} BYN\n"
+                   f"------------------------------\n"
+                   f"ЗАПАС ПРОЧНОСТИ: {safety_margin:.1f}%\n"
+                   f"СТАТУС: {status}")
+            self.result_text.insert("1.0", res.replace(",", " "))
 
+            # График
             self.ax.clear()
-            self.fig.patch.set_facecolor('#1a1a1a')
-            self.ax.set_facecolor('#1a1a1a')
+            self.fig.patch.set_facecolor('#1a1a1a'); self.ax.set_facecolor('#1a1a1a')
             x = np.linspace(0, goal * 1.5, 100)
-            y = ((x / nds_f * margin) - fc) * 0.8
+            cur_margin = margin_pct if "ОСН" in mode else effective_margin
+            # Приведение выручки к базе без НДС для графика при ОСН
+            y = ((x / (1.2 if "ОСН" in mode else 1)) * cur_margin) - fc
             self.ax.plot(x, y, color='#00aaff', lw=3)
             self.ax.axhline(0, color='white', lw=1)
-            self.ax.axvline(bep, color='#ff9500', linestyle='--')
-            self.ax.scatter([goal], [vals["target_profit"]], color='red', s=100)
+            self.ax.axvline(bep, color='#ff9500', ls='--')
+            
+            # --- ВОЗВРАЩАЕМ И ПОДПИСЫВАЕМ ТОЧКУ ЦЕЛЕВОЙ ПРИБЫЛИ ---
+            # Рисуем красную точку
+            self.ax.scatter([goal], [vals["target_profit"]], color='red', s=120, zorder=5)
+            
+            # Добавляем краткую подпись
+            self.ax.annotate(f"ЧИСТ.ПРИБЫЛЬ\n{int(vals['target_profit']):,} BYN".replace(",", " "), 
+                             xy=(goal, vals["target_profit"]), 
+                             xytext=(20, 10), # Смещение текста относительно точки
+                             textcoords='offset points',
+                             color='white',
+                             fontweight='bold',
+                             fontsize=11,
+                             arrowprops=dict(arrowstyle="->", color='white', connectionstyle="arc3,rad=.2"))
+            
             self.ax.tick_params(colors='white')
+            # Настройка сетки для красоты
+            self.ax.grid(color='#444444', linestyle='--', linewidth=0.5)
             self.canvas.draw()
-        except: messagebox.showerror("Ошибка", "Проверьте ввод чисел!")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Проверьте правильность ввода чисел! {e}")
+
+    def on_closing(self):
+        plt.close('all'); self.quit(); self.destroy(); sys.exit()
 
 if __name__ == "__main__":
-    app = PrintingApp()
-    app.mainloop()
+    app = PrintingApp(); app.mainloop()
