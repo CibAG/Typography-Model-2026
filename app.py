@@ -35,6 +35,10 @@ class PrintingApp(ctk.CTk):
         self.left_panel = ctk.CTkScrollableFrame(self.main_frame, width=460)
         self.left_panel.pack(side="left", fill="y", padx=(0, 20))
 
+        # --- НАЗВАНИЕ ПРЕДПРИЯТИЯ ---
+        ctk.CTkLabel(self.left_panel, text="0. НАЗВАНИЕ ПРЕДПРИЯТИЯ", font=("Arial", 18, "bold"), text_color="#edad2b").pack(pady=(0,10))
+        self.create_input("Название:", "", "enterprise_name", width=200)
+
         # --- НАЛОГОВЫЙ РЕЖИМ ---
         ctk.CTkLabel(self.left_panel, text="1. НАЛОГОВЫЙ РЕЖИМ", font=("Arial", 18, "bold"), text_color="#edad2b").pack(pady=(0,10))
         self.tax_mode = ctk.StringVar(value=self.saved_values.get("tax_mode", "ОСН (с НДС 20%)"))
@@ -75,12 +79,12 @@ class PrintingApp(ctk.CTk):
         self.auto_calculate_taxes()
         self.calculate()
 
-    def create_input(self, label_text, default_val, var_name, readonly=False):
+    def create_input(self, label_text, default_val, var_name, readonly=False, width=120):
         frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
         frame.pack(fill="x", padx=10, pady=2)
         ctk.CTkLabel(frame, text=label_text, width=200, anchor="w").pack(side="left")
         sv = tk.StringVar(value=str(self.saved_values.get(var_name, default_val)))
-        entry = ctk.CTkEntry(frame, width=120, textvariable=sv, state="readonly" if readonly else "normal")
+        entry = ctk.CTkEntry(frame, width=width, textvariable=sv, state="readonly" if readonly else "normal")
         if var_name == "salary_net": sv.trace_add("write", self.auto_calculate_taxes)
         entry.pack(side="right")
         setattr(self, var_name, entry)
@@ -91,7 +95,7 @@ class PrintingApp(ctk.CTk):
             gross = net / 0.86
             self.update_readonly(self.fszn, f"{(gross * 0.35):.2f}")
             self.update_readonly(self.income_tax, f"{(gross * 0.13):.2f}")
-        except: pass
+        except (ValueError, ZeroDivisionError): pass
 
     def update_readonly(self, field, val):
         field.configure(state="normal"); field.delete(0, tk.END); field.insert(0, val); field.configure(state="readonly")
@@ -100,7 +104,7 @@ class PrintingApp(ctk.CTk):
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f: return json.load(f)
-            except: return {}
+            except (json.JSONDecodeError, OSError): return {}
         return {}
 
     def calculate(self):
@@ -112,7 +116,12 @@ class PrintingApp(ctk.CTk):
             # Сохранение
             save_dict = {k: getattr(self, k).get() for k in keys}
             save_dict["tax_mode"] = mode
+            save_dict["enterprise_name"] = self.enterprise_name.get()
             with open(CONFIG_FILE, "w", encoding="utf-8") as f: json.dump(save_dict, f, indent=4)
+
+            enterprise = self.enterprise_name.get().strip()
+            if enterprise:
+                self.title(f"{enterprise} | Financial Optimizer")
 
             # Расчет ФОТ + налоги
             staff_total = vals["salary_net"] + vals["fszn"] + vals["income_tax"] + (vals["salary_net"]/0.86 * 0.006)
@@ -141,7 +150,9 @@ class PrintingApp(ctk.CTk):
                 status, color = "ВЫСОКИЙ (Стабильно)", "#4caf50"
 
             self.result_text.delete("1.0", tk.END)
-            res = (f"РЕЖИМ: {mode}\n"
+            header = f"ПРЕДПРИЯТИЕ: {enterprise}\n" if enterprise else ""
+            res = (f"{header}"
+                   f"РЕЖИМ: {mode}\n"
                    f"ЗАТРАТЫ НА ПЕРСОНАЛ: {int(staff_total):,} BYN\n"
                    f"ПОСТОЯННЫЕ (ИТОГО): {int(fc):,} BYN\n"
                    f"------------------------------\n"
@@ -158,7 +169,11 @@ class PrintingApp(ctk.CTk):
             x = np.linspace(0, goal * 1.5, 100)
             cur_margin = margin_pct if "ОСН" in mode else effective_margin
             # Приведение выручки к базе без НДС для графика при ОСН
-            y = ((x / (1.2 if "ОСН" in mode else 1)) * cur_margin) - fc
+            # Для ОСН кривая отражает ЧИСТУЮ прибыль (после налога на прибыль 20%),
+            # чтобы красная точка целевой прибыли лежала на линии графика
+            nds_div = 1.2 if "ОСН" in mode else 1
+            profit_factor = 0.8 if "ОСН" in mode else 1
+            y = (((x / nds_div) * cur_margin) - fc) * profit_factor
             self.ax.plot(x, y, color='#00aaff', lw=3)
             self.ax.axhline(0, color='white', lw=1)
             self.ax.axvline(bep, color='#ff9500', ls='--')
@@ -185,7 +200,7 @@ class PrintingApp(ctk.CTk):
             messagebox.showerror("Ошибка", f"Проверьте правильность ввода чисел! {e}")
 
     def on_closing(self):
-        plt.close('all'); self.quit(); self.destroy(); sys.exit()
+        plt.close('all'); self.destroy()
 
 if __name__ == "__main__":
     app = PrintingApp(); app.mainloop()
